@@ -1,192 +1,151 @@
-const CourseInfo = {
-    id: 451,
-    name: "Introduction to JavaScript"
-  };
-  
-  // The provided assignment group.
-  const AssignmentGroup = {
-    id: 12345,
-    name: "Fundamentals of JavaScript",
-    course_id: 451,
-    group_weight: 25,
-    assignments: [
-       {
-  
-        id: 1,
-        name: "Declare a Variable",
-        due_at: "2023-01-25",
-        points_possible: 50
-      },
-      {
-        id: 2,
-        name: "Write a Function",
-        due_at: "2023-02-27",
-        points_possible: 150
-      },
-      {
-        id: 3,
-        name: "Code the World",
-        due_at: "3156-11-15",
-        points_possible: 500
-      }
-    ]
-  };
-  
-  // The provided learner submission data.
-  const LearnerSubmissions = [
-    {
-      learner_id: 125,
-      assignment_id: 1,
-      submission: {
-        submitted_at: "2023-01-25",
-        score: 47
-      }
-    },
-    {
-      learner_id: 125,
-      assignment_id: 2,
-      submission: {
-        submitted_at: "2023-02-12",
-        score: 150
-      }
-    },
-    {
-      learner_id: 125,
-      assignment_id: 3,
-      submission: {
-        submitted_at: "2023-01-25",
-        score: 400
-      }
-    },
-    {
-      learner_id: 132,
-      assignment_id: 1,
-      submission: {
-        submitted_at: "2023-01-24",
-        score: 39
-      }
-    },
-    {
-      learner_id: 132,
-      assignment_id: 2,
-      submission: {
-        submitted_at: "2023-03-07",
-        score: 140
-      }
+function getLearnerData(courseInfo, assignmentGroups, learnerSubmissions, currentDate) {
+    try {
+        // Validate courseInfo
+        if (typeof courseInfo.id !== 'number' || typeof courseInfo.name !== 'string') {
+            throw new Error('Invalid CourseInfo object');
+        }
+
+        // Initialize an object to store learner data
+        const learnerData = {};
+
+        // Validate and process assignment groups
+        assignmentGroups.forEach(group => {
+            if (group.course_id !== courseInfo.id) {
+                throw new Error(`AssignmentGroup with ID ${group.id} does not belong to the course`);
+            }
+
+            if (typeof group.group_weight !== 'number' || group.group_weight <= 0 || group.group_weight > 100) {
+                throw new Error(`Invalid group weight for AssignmentGroup with ID ${group.id}`);
+            }
+
+            group.assignments.forEach(assignment => {
+                if (typeof assignment.id !== 'number' ||
+                    typeof assignment.name !== 'string' ||
+                    typeof assignment.points_possible !== 'number' ||
+                    assignment.points_possible <= 0) {
+                    throw new Error(`Invalid AssignmentInfo object for Assignment with ID ${assignment.id}`);
+                }
+            });
+        });
+
+        // Process learner submissions
+        learnerSubmissions.forEach(submission => {
+            const { learner_id, assignment_id, submission: submissionDetails } = submission;
+
+            if (typeof learner_id !== 'number' || typeof assignment_id !== 'number' ||
+                typeof submissionDetails.score !== 'number' || typeof submissionDetails.submitted_at !== 'string') {
+                throw new Error(`Invalid LearnerSubmission object`);
+            }
+
+            // Find the assignment group and assignment
+            const assignmentGroup = assignmentGroups.find(group =>
+                group.assignments.some(assignment => assignment.id === assignment_id)
+            );
+
+            if (!assignmentGroup) {
+                throw new Error(`Assignment with ID ${assignment_id} not found`);
+            }
+
+            const assignment = assignmentGroup.assignments.find(a => a.id === assignment_id);
+
+            // Skip assignments not yet due
+            if (new Date(assignment.due_at) > new Date(currentDate)) {
+                return;
+            }
+
+            // Calculate the score, applying a late penalty if necessary
+            let score = submissionDetails.score;
+            if (new Date(submissionDetails.submitted_at) > new Date(assignment.due_at)) {
+                score -= assignment.points_possible * 0.10;  // Deduct 10% for late submission
+            }
+
+            if (!learnerData[learner_id]) {
+                learnerData[learner_id] = {
+                    id: learner_id,
+                    totalScore: 0,
+                    totalPoints: 0,
+                    avg: 0,
+                };
+            }
+
+            const learner = learnerData[learner_id];
+            const percentage = (score / assignment.points_possible) * 100;
+
+            // Add assignment percentage to learner object
+            learner[assignment.id] = percentage;
+            learner.totalScore += score;
+            learner.totalPoints += assignment.points_possible;
+        });
+
+        // Calculate the weighted average for each learner
+        return Object.values(learnerData).map(learner => {
+            if (learner.totalPoints > 0) {
+                learner.avg = (learner.totalScore / learner.totalPoints) * 100;
+            } else {
+                learner.avg = 0;
+            }
+
+            delete learner.totalScore;
+            delete learner.totalPoints;
+            return learner;
+        });
+
+    } catch (error) {
+        console.error('Error:', error.message);
+        return [];
     }
-  ];
-  
-  function getLearnerData(course, ag, submissions) {
-    
-    function calculateLearnerScores(courseInfo, assignmentGroups, learnerSubmissions) {
-      const now = new Date();
-      
-      // Step 1: Filter out assignments not due yet
-      assignmentGroups.forEach(group => {
-          group.assignments = group.assignments.filter(assignment => new Date(assignment.due_at) <= now);
-      });
-  
-      const learnerScores = {};
-  
-      learnerSubmissions.forEach(submission => {
-          const { learner_id, assignment_id, submission: { score } } = submission;
-  
-          // Find the assignment and its group
-          let foundAssignment, foundGroup;
-          for (const group of assignmentGroups) {
-              foundAssignment = group.assignments.find(assignment => assignment.id === assignment_id);
-              if (foundAssignment) {
-                  foundGroup = group;
-                  break;
-              }
-          }
-  
-          if (!foundAssignment) return; // Skip if assignment not found
-  
-          // Initialize learner entry if not already done
-          if (!learnerScores[learner_id]) {
-              learnerScores[learner_id] = { id: learner_id, avg: 0, totalWeightedScore: 0, totalWeightedPoints: 0 };
-          }
-  
-          const { points_possible } = foundAssignment;
-  
-          // Calculate the percentage score for the assignment
-          const percentageScore = (score / points_possible) * 100;
-  
-          // Add the assignment score to the learner's entry
-          learnerScores[learner_id][assignment_id] = percentageScore;
-  
-          // Update the learner's weighted score total
-          const weight = foundGroup.group_weight;
-          learnerScores[learner_id].totalWeightedScore += score * weight;
-          learnerScores[learner_id].totalWeightedPoints += points_possible * weight;
-      });
-  
-      // Final calculation of averages
-      Object.values(learnerScores).forEach(learner => {
-          learner.avg = (learner.totalWeightedScore / learner.totalWeightedPoints) * 100;
-          delete learner.totalWeightedScore;
-          delete learner.totalWeightedPoints;
-      });
-  
-      // Return the learner scores as an array
-      return Object.values(learnerScores);
-  }
-  }    
-       
-  const courseInfo = {
+}
+
+// Example data for testing
+const courseInfo = {
     id: 1,
-    name: "Mathematics 101"
-  };
-  
-  const assignmentGroups = [
+    name: 'Math 101',
+};
+
+const assignmentGroups = [
     {
-      id: 1,
-      name: "Homework",
-      course_id: 1,
-      group_weight: 0.4,
-      assignments: [
-        { id: 1, name: "HW1", due_at: "2024-07-01", points_possible: 100 },
-        { id: 2, name: "HW2", due_at: "2024-08-01", points_possible: 100 }
-      ]
+        id: 1,
+        name: 'Homework',
+        course_id: 1,
+        group_weight: 40,
+        assignments: [
+            {
+                id: 101,
+                name: 'Assignment 1',
+                due_at: '2024-07-15',
+                points_possible: 100,
+            },
+            {
+                id: 102,
+                name: 'Assignment 2',
+                due_at: '2024-08-10',
+                points_possible: 100,
+            },
+        ],
+    },
+];
+
+const learnerSubmissions = [
+    {
+        learner_id: 1,
+        assignment_id: 101,
+        submission: {
+            submitted_at: '2024-07-14',
+            score: 90,
+        },
     },
     {
-      id: 2,
-      name: "Exams",
-      course_id: 1,
-      group_weight: 0.6,
-      assignments: [
-        { id: 3, name: "Midterm", due_at: "2024-07-15", points_possible: 200 },
-        { id: 4, name: "Final", due_at: "2024-08-15", points_possible: 200 }
-      ]
-    }
-  ];
-  
-  const learnerSubmissions = [
-    {
-      learner_id: 101,
-      assignment_id: 1,
-      submission: { submitted_at: "2024-06-30", score: 80 }
+        learner_id: 1,
+        assignment_id: 102,
+        submission: {
+            submitted_at: '2024-08-11',
+            score: 85,
+        },
     },
-    {
-      learner_id: 101,
-      assignment_id: 2,
-      submission: { submitted_at: "2024-07-30", score: 90 }
-    },
-    {
-      learner_id: 101,
-      assignment_id: 3,
-      submission: { submitted_at: "2024-07-14", score: 180 }
-    },
-    {
-      learner_id: 102,
-      assignment_id: 1,
-      submission: { submitted_at: "2024-06-30", score: 70 }
-    },
-    {
-      learner_id: 102,
-      assignment_id: 3,
-      submission: { submitted_at: "2024-07-14", score: 150 }
-    }
-  ]
-  
+];
+
+const currentDate = '2024-08-09';
+
+// Call the function with example data
+const results = getLearnerData(courseInfo, assignmentGroups, learnerSubmissions, currentDate);
+console.log(results);
